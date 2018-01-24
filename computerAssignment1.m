@@ -1,26 +1,37 @@
 function computerAssignment1
 section = zeros();
+sparType = zeros();
 topCapped = zeros();
 bottomCapped = zeros();
 inputTitle = {'l1 (in meters)', 'l2 (in meters)'};
 defaultValue = {'0.05', '0.10'};
-type = chooseSection({'Open', 'Closed', 'Custom'}, 'Select section type');
+type = chooseSection({'Closed', 'Open', 'Custom'}, 'Select section type');
 
 if (strcmp(type, 'Closed'))
-    inputTitle(end + 1) = {'t (in meters)'};
-    defaultValue(end + 1) = {'0.01'};
-    section = chooseSection({'Wing Box'},...
+    section = chooseSection({'Inter-Spar Box', 'Wing Box'},...
         'Select closed section');
 elseif (strcmp(type, 'Open'))
-    inputTitle(end + 1) = {'t (in meters)'};
-    defaultValue(end + 1) = {'0.01'};
     section = chooseSection({'C', 'I', 'Z',...
         'invert L'}, 'Select open section');
 else
     % Custom section
 end
 
+if (strcmp(section, 'Inter-Spar Box'))
+    sparType = chooseSection({'Simple', 'C',...
+        'I', 'Z', 'L', 'invert L'}, 'Select spar type');
+end
+
 if (strcmp(type, 'Closed') || strcmp(type, 'Open'))
+    if (strcmp(type, 'Open') || strcmp(section, 'Wing Box'))
+        inputTitle(end + 1) = {'t (in meters)'};
+        defaultValue(end + 1) = {'0.01'};
+    else
+        inputTitle(end + 1) = {'t_spar (in meters)'};
+        defaultValue(end + 1) = {'0.004'};
+        inputTitle(end + 1) = {'t_skin (in meters)'};
+        defaultValue(end + 1) = {'0.001'};
+    end
     inputTitle(end + 1) = {'E_1 (in Pascal)'};
     defaultValue(end + 1) = {'70000000000'};
     [~ , E_at(1)] = size(inputTitle);
@@ -29,13 +40,16 @@ if (strcmp(type, 'Closed') || strcmp(type, 'Open'))
     inputTitle(end + 1) = {'E_3 (in Pascal)'};
     defaultValue(end + 1) = {'70000000000'};
     
-    [~ , E_at(2)] = size(inputTitle);
     if (strcmp(section, 'Wing Box'))
         inputTitle(end + 1) = {'E_4 (in Pascal)'};
         defaultValue(end + 1) = {'70000000000'};
         inputTitle(end + 1) = {'E_5 (in Pascal)'};
         defaultValue(end + 1) = {'70000000000'};
-        [~ , E_at(2)] = size(inputTitle);
+    end
+    
+    if (strcmp(section, 'Inter-Spar Box'))
+        inputTitle(end + 1) = {'E_4 (in Pascal)'};
+        defaultValue(end + 1) = {'70000000000'};
     end
     
     if (strcmp(type, 'Open'))
@@ -43,15 +57,14 @@ if (strcmp(type, 'Closed') || strcmp(type, 'Open'))
         if (topCapped)
             inputTitle(end + 1) = {'E_topCap (in Pascal)'};
             defaultValue(end + 1) = {'200000000000'};
-            [~ , E_at(2)] = size(inputTitle);
         end
         
         if (bottomCapped)
             inputTitle(end + 1) = {'E_bottomCap (in Pascal)'};
             defaultValue(end + 1) = {'200000000000'};
-            [~ , E_at(2)] = size(inputTitle);
         end
     end
+    [~ , E_at(2)] = size(inputTitle);
 end
 inputTitle(end + 1) = {'Mx (in N-m)'};
 defaultValue(end + 1) = {'0'};
@@ -61,7 +74,7 @@ defaultValue(end + 1) = {'200'};
 
 
 parseInput(inputTitle, defaultValue, section,...
-    topCapped, bottomCapped, E_at);
+    sparType, topCapped, bottomCapped, E_at);
 end
 
 function section = chooseSection(section_choices, title)
@@ -154,16 +167,16 @@ uiwait(d);
 end
 
 function a = parseInput(inputTitle, defaultValue, section,...
-    topCapped, bottomCapped, E_at)
+    sparType, topCapped, bottomCapped, E_at)
 % Ai(m, n, p) has stuctures as collection of rectangles
 % diagonal point, Ai(:, :, p) correspond to rectangle p
 % every point Ai(l, k, p), l = 1, 2 corresponding to any
 % two correspoing diagonal vertices point corresponding
 % to vertices of rectangle and k = 1, 2 correspond to y, z
 % coodinate of that diagonal in order a----b  d-b or a-c
-%                                     | \/ |
-%                                     | /\ |
-%                                     d----c
+%                                                          | \/ |
+%                                                          | /\ |
+%                                                         d----c
 
 
 Ei = zeros(E_at(2) + 2 - E_at(1), 1);
@@ -198,12 +211,11 @@ M = zeros(2, 1);
 [data_count, ~] = size(data_str);
 M(1) = str2double(data_str(data_count - 1));
 M(2) = str2double(data_str(data_count));
-
 m = size(Ei);
 if (strcmp(section, 'C'))
-    Ai(:, :, 1) = [0, 0; ti(1), -l1];
-    Ai(:, :, 2) = [ti(1), 0; (ti(1) + l2), -ti];
-    Ai(:, :, 3) = [(ti(1) + l2), 0; (ti(1) + l2 + ti(1)), -l1];
+    Ai(:, :, 1) = [0, 0; ti, -l1];
+    Ai(:, :, 2) = [ti, 0; (ti + l2), -ti];
+    Ai(:, :, 3) = [(ti + l2), 0; (ti + l2 + ti), -l1];
     if (topCapped)
         Ai(:, :, 5) = [(ti + l2 + ti), 0; ((ti * 3) + l2), -l1];
     end
@@ -292,7 +304,99 @@ elseif (strcmp(section, 'Wing Box'))
     Ei(13) = E(3);
     Ai(:, :, 14) = zeros(2);
     Ei(14) = E(3);
+elseif (strcmp(section, 'Inter-Spar Box'))
+    if (m < 3)
+        disp('Ei has less element than expected')
+        return;
+    end
+    t = zeros(2, 1);
+    % t(1) is skin thickness
+    % t(2) is spar thickness
+    t(1) = ti(2);
+    t(2) = ti(1);
+    E = Ei;
+    
+    % Skin
+    Ai(:, :, 1) = [0, 0; t(1), -(l2 + (2 * t(2)))];
+    Ei(1) = E(1);
+    Ai(:, :, 2) = [(l1 + t(1)), 0; (l1 + (2*t(1))), -(l2 + (2* t(2)))];
+    Ei(2) = E(1);
+    
+    % Spar
+    l3 = l2/4;
+    if (strcmp(sparType, 'Simple'))
+        Ai(:, :, 3) = [t(1), 0; (l1 + t(1)), -t(2)];
+        Ei(3) = E(1);
+        Ai(:, :, 4) = [t(1), -(l2 + t(2)); (t(1) + l1), -(l2 + (2* t(2)))];
+        Ei(4) = E(1);
+    elseif (strcmp(sparType, 'C'))
+        Ai(:, :, 3) = [t(1), 0; (l1 + t(1)), -t(2)];
+        Ei(3) = E(1);
+        Ai(:, :, 5) = [t(1), -t(2); t(1) + t(2), -(l3 + t(2))];
+        Ei(5) = E(1);
+        Ai(:, :, 6) = [l1 + t(1) - t(2), -t(2); l1 + t(1), -(l3 + t(2))];
+        Ei(6) = E(1);
+        Ai(:, :, 4) = [t(1), -(l2 + t(2)); (t(1) + l1), -(l2 + (2* t(2)))];
+        Ei(4) = E(1);
+        Ai(:, :, 7) = [t(1), -(l2 + t(2) - l3); t(1) + t(2), -(l2 + t(2))];
+        Ei(7) = E(1);
+        Ai(:, :, 8) = [l1 + t(1) - t(2), -(l2 + t(2) - l3); l1 + t(1), -(l2 + t(2))];
+        Ei(8) = E(1);
+    elseif (strcmp(sparType, 'I'))
+        Ai(:, :, 3) = [t(1), 0; (l1 + t(1)), -t(2)];
+        Ei(3) = E(1);
+        Ai(:, :, 5) = [t(1), -t(2); t(1) + t(2), -(l3 + t(2))];
+        Ei(5) = E(1);
+        Ai(:, :, 6) = [l1 + t(1) - t(2), -t(2); l1 + t(1), -(l3 + t(2))];
+        Ei(6) = E(1);
+        Ai(:, :, 9) = [t(1), 0; t(1) + t(2), l3];
+        Ei(9) = E(1);
+        Ai(:, :, 10) = [l1 + t(1) - t(2), 0; l1 + t(1) , l3];
+        Ei(10) = E(1);
+        Ai(:, :, 4) = [t(1), -(l2 + t(2)); (t(1) + l1), -(l2 + (2* t(2)))];
+        Ei(4) = E(1);
+        Ai(:, :, 7) = [t(1), -(l2 + t(2) - l3); t(1) + t(2), -(l2 + t(2))];
+        Ei(7) = E(1);
+        Ai(:, :, 8) = [l1 + t(1) - t(2), -(l2 + t(2) - l3); l1 + t(1), -(l2 + t(2))];
+        Ei(8) = E(1);
+        Ai(:, :, 11) = [t(1), -(l2 +(2*t(2))); t(1) + t(2), -(l2 + (2*t(2)) + l3)];
+        Ei(11) = E(1);
+        Ai(:, :, 12) = [l1 + t(1) - t(2), -(l2 +(2*t(2))); l1 + t(1), -(l2 + (2*t(2)) + l3)];
+        Ei(12) = E(1);
+    elseif (strcmp(sparType, 'Z'))
+        Ai(:, :, 3) = [t(1), 0; (l1 + t(1)), -t(2)];
+        Ei(3) = E(1);      
+        Ai(:, :, 6) = [l1 + t(1) - t(2), -t(2); l1 + t(1), -(l3 + t(2))];
+        Ei(6) = E(1);
+        Ai(:, :, 9) = [t(1), 0; t(1) + t(2), l3];
+        Ei(9) = E(1);
+        Ai(:, :, 4) = [t(1), -(l2 + t(2)); (t(1) + l1), -(l2 + (2* t(2)))];
+        Ei(4) = E(1);
+        Ai(:, :, 7) = [l1 + t(1) - t(2), -(l2 + t(2) - l3); l1 + t(1), -(l2 + t(2))];
+        Ei(7) = E(1);
+        Ai(:, :, 5) = [t(1), -(l2 +(2*t(2))); t(1) + t(2), -(l2 + (2*t(2)) + l3)];
+        Ei(5) = E(1);
+    elseif (strcmp(sparType, 'L'))
+        Ai(:, :, 3) = [t(1), 0; (l1 + t(1)), -t(2)];
+        Ei(3) = E(1);
+        Ai(:, :, 5) = [t(1), -t(2); t(1) + t(2), -(l3 + t(2))];
+        Ei(5) = E(1);
+        Ai(:, :, 4) = [t(1), -(l2 + t(2)); (t(1) + l1), -(l2 + (2* t(2)))];
+        Ei(4) = E(1);
+        Ai(:, :, 6) = [t(1), -(l2 + t(2) - l3); t(1) + t(2), -(l2 + t(2))];
+        Ei(6) = E(1);
+    else
+        Ai(:, :, 3) = [t(1), 0; (l1 + t(1)), -t(2)];
+        Ei(3) = E(1);
+        Ai(:, :, 5) = [l1 + t(1) - t(2), -t(2); l1 + t(1), -(l3 + t(2))];
+        Ei(5) = E(1);
+        Ai(:, :, 4) = [t(1), -(l2 + t(2)); (t(1) + l1), -(l2 + (2* t(2)))];
+        Ei(4) = E(1);
+        Ai(:, :, 6) = [l1 + t(1) - t(2), -(l2 + t(2) - l3); l1 + t(1), -(l2 + t(2))];
+        Ei(6) = E(1);
+    end
 end
+
 l = l1 * 2;
 if l2 > l1
     l = l2 * 2;
@@ -440,8 +544,13 @@ maxStr = max1;
 %max Stress end
 
 left_margin_2 =  l - (0.2 * (l/4));
-X = ['t = ', num2str(ti)];
-text(left_margin_2, l/4, X)
+if (strcmp(section, 'Inter-Spar Box'))
+    X = ['t = ', mat2str(ti)];
+    text(left_margin_2, l/4, X)
+else
+    X = ['t = ', num2str(ti)];
+    text(left_margin_2, l/4, X)
+end
 
 X = ['l1 = ', num2str(l1)];
 text(left_margin_2, 1.5 *(l/4), X)
